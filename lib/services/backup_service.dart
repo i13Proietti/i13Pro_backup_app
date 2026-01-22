@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import '../models/device.dart';
 import '../models/backup_config.dart';
@@ -77,7 +78,7 @@ class BackupService {
           );
           _progressController.add(progress);
         } catch (e) {
-          print('Error syncing file $sourcePath: $e');
+          debugPrint('Error syncing file $sourcePath: $e');
           // Continua con il prossimo file
         }
       }
@@ -116,7 +117,7 @@ class BackupService {
         final files = await _scanFolder(device, folder);
         filesToSync.addAll(files);
       } catch (e) {
-        print('Error scanning folder ${folder.phonePath}: $e');
+        debugPrint('Error scanning folder ${folder.phonePath}: $e');
       }
     }
 
@@ -143,19 +144,39 @@ class BackupService {
         final phonePath = '${folder.phonePath}/$fileName';
         final pcPath = path.join(folder.pcPath, fileName);
 
-        files.add({
-          'source': phonePath,
-          'dest': pcPath,
-          'size': 0, // Potrebbe essere ottenuto con uno stat
-        });
+        try {
+          // Ottieni info sul file per determinare se è una directory
+          final fileInfo = await deviceManager.getFileInfo(device, phonePath);
+          final isDirectory = fileInfo['isDirectory'] as bool? ?? false;
+          final fileSize = fileInfo['size'] as int? ?? 0;
 
-        // Se include sottocartelle, recursione
-        if (folder.includeSubfolders) {
-          // TODO: Implementare recursione per sottocartelle
+          if (isDirectory) {
+            // Se è una directory e includiamo sottocartelle, scansiona ricorsivamente
+            if (folder.includeSubfolders) {
+              final subFolder = BackupFolder(
+                id: '${folder.id}_sub',
+                phonePath: phonePath,
+                pcPath: pcPath,
+                includeSubfolders: folder.includeSubfolders,
+                excludeExtensions: folder.excludeExtensions,
+                excludeFolders: folder.excludeFolders,
+                isEnabled: folder.isEnabled,
+              );
+              final subFiles = await _scanFolder(device, subFolder);
+              files.addAll(subFiles);
+            }
+          } else {
+            // È un file normale
+            files.add({'source': phonePath, 'dest': pcPath, 'size': fileSize});
+          }
+        } catch (e) {
+          debugPrint('Error getting file info for $phonePath: $e');
+          // Se fallisce, assume che sia un file
+          files.add({'source': phonePath, 'dest': pcPath, 'size': 0});
         }
       }
     } catch (e) {
-      print('Error scanning folder: $e');
+      debugPrint('Error scanning folder: $e');
     }
 
     return files;
@@ -210,12 +231,33 @@ class BackupService {
       // Entrambi esistono, confronta le date di modifica
       final pcModified = await pcFile.lastModified();
 
-      // TODO: Ottenere la data di modifica del file sul telefono
-      // Per ora, usa una strategia semplice: il più recente vince
-      // In una implementazione completa, si dovrebbe confrontare le date
+      try {
+        // Ottieni la data di modifica del file sul telefono
+        final phoneFileInfo = await deviceManager.getFileInfo(
+          device,
+          phonePath,
+        );
+        final phoneModified = phoneFileInfo['modified'] as DateTime?;
 
-      // Copia dal telefono al PC (strategia semplificata)
-      await deviceManager.copyFromDevice(device, phonePath, pcPath);
+        if (phoneModified != null) {
+          // Confronta i timestamp e sincronizza il più recente
+          if (phoneModified.isAfter(pcModified)) {
+            // Il file sul telefono è più recente
+            await deviceManager.copyFromDevice(device, phonePath, pcPath);
+          } else if (pcModified.isAfter(phoneModified)) {
+            // Il file sul PC è più recente
+            await deviceManager.copyToDevice(device, pcPath, phonePath);
+          }
+          // Se hanno la stessa data, non fare nulla
+        } else {
+          // Se non si riesce a ottenere il timestamp, usa strategia semplice
+          await deviceManager.copyFromDevice(device, phonePath, pcPath);
+        }
+      } catch (e) {
+        debugPrint('Error in bidirectional sync: $e');
+        // Fallback: copia dal telefono al PC
+        await deviceManager.copyFromDevice(device, phonePath, pcPath);
+      }
     }
   }
 
@@ -232,7 +274,7 @@ class BackupService {
           try {
             await deviceManager.deleteOnDevice(device, sourcePath);
           } catch (e) {
-            print('Error deleting file on device: $e');
+            debugPrint('Error deleting file on device: $e');
           }
         }
         break;
@@ -247,7 +289,7 @@ class BackupService {
               await file.delete();
             }
           } catch (e) {
-            print('Error deleting file on PC: $e');
+            debugPrint('Error deleting file on PC: $e');
           }
         }
         break;
@@ -261,7 +303,7 @@ class BackupService {
           try {
             await deviceManager.deleteOnDevice(device, sourcePath);
           } catch (e) {
-            print('Error deleting file on device: $e');
+            debugPrint('Error deleting file on device: $e');
           }
 
           try {
@@ -270,7 +312,7 @@ class BackupService {
               await file.delete();
             }
           } catch (e) {
-            print('Error deleting file on PC: $e');
+            debugPrint('Error deleting file on PC: $e');
           }
         }
         break;

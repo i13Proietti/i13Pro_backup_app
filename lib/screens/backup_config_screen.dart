@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import '../models/device.dart';
 import '../models/backup_config.dart';
 import '../providers/app_state.dart';
+import '../widgets/phone_folder_browser.dart';
 
 class BackupConfigScreen extends StatefulWidget {
   final MobileDevice device;
@@ -97,6 +98,7 @@ class _BackupConfigScreenState extends State<BackupConfigScreen> {
             _FoldersSection(
               folders: _folders,
               onAdd: _addFolder,
+              onAddFullBackup: _addFullBackupPreset,
               onRemove: _removeFolder,
             ),
             const SizedBox(height: 24),
@@ -131,55 +133,36 @@ class _BackupConfigScreenState extends State<BackupConfigScreen> {
   }
 
   Future<void> _addFolder() async {
-    // Seleziona la cartella del telefono (manualmente per ora)
-    final phonePathController = TextEditingController();
+    final appState = context.read<AppState>();
 
-    // Seleziona la cartella del PC
+    // Prima seleziona la cartella del telefono usando il browser
+    String? phonePath;
+
+    await showDialog(
+      context: context,
+      builder: (context) => PhoneFolderBrowser(
+        device: widget.device,
+        deviceManager: appState.deviceManager,
+        initialPath: widget.device.type == DeviceType.android ? '/sdcard' : '/',
+        onFolderSelected: (path) {
+          phonePath = path;
+        },
+      ),
+    );
+
+    if (phonePath == null || !mounted) return;
+
+    // Poi seleziona la cartella del PC
     final pcPath = await FilePicker.platform.getDirectoryPath();
-
     if (pcPath == null) return;
 
     if (!mounted) return;
 
+    // Mostra dialog per opzioni aggiuntive
     final result = await showDialog<BackupFolder>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Aggiungi Cartella'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: phonePathController,
-              decoration: const InputDecoration(
-                labelText: 'Percorso sul telefono',
-                hintText: '/sdcard/DCIM/Camera',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Percorso PC: $pcPath'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annulla'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (phonePathController.text.isNotEmpty) {
-                final folder = BackupFolder(
-                  id: DateTime.now().millisecondsSinceEpoch.toString(),
-                  phonePath: phonePathController.text,
-                  pcPath: pcPath,
-                );
-                Navigator.pop(context, folder);
-              }
-            },
-            child: const Text('Aggiungi'),
-          ),
-        ],
-      ),
+      builder: (context) =>
+          _AddFolderDialog(phonePath: phonePath!, pcPath: pcPath),
     );
 
     if (result != null) {
@@ -187,6 +170,81 @@ class _BackupConfigScreenState extends State<BackupConfigScreen> {
         _folders.add(result);
       });
     }
+  }
+
+  Future<void> _addFullBackupPreset() async {
+    // Seleziona la cartella base del PC per il backup
+    final pcBasePath = await FilePicker.platform.getDirectoryPath();
+    if (pcBasePath == null) return;
+
+    final List<BackupFolder> presetFolders;
+
+    if (widget.device.type == DeviceType.android) {
+      // Preset per Android: cartelle comuni
+      presetFolders = [
+        BackupFolder(
+          id: '${DateTime.now().millisecondsSinceEpoch}_dcim',
+          phonePath: '/sdcard/DCIM',
+          pcPath: '$pcBasePath/DCIM',
+          includeSubfolders: true,
+        ),
+        BackupFolder(
+          id: '${DateTime.now().millisecondsSinceEpoch}_pictures',
+          phonePath: '/sdcard/Pictures',
+          pcPath: '$pcBasePath/Pictures',
+          includeSubfolders: true,
+        ),
+        BackupFolder(
+          id: '${DateTime.now().millisecondsSinceEpoch}_download',
+          phonePath: '/sdcard/Download',
+          pcPath: '$pcBasePath/Download',
+          includeSubfolders: true,
+        ),
+        BackupFolder(
+          id: '${DateTime.now().millisecondsSinceEpoch}_documents',
+          phonePath: '/sdcard/Documents',
+          pcPath: '$pcBasePath/Documents',
+          includeSubfolders: true,
+        ),
+        BackupFolder(
+          id: '${DateTime.now().millisecondsSinceEpoch}_music',
+          phonePath: '/sdcard/Music',
+          pcPath: '$pcBasePath/Music',
+          includeSubfolders: true,
+        ),
+        BackupFolder(
+          id: '${DateTime.now().millisecondsSinceEpoch}_videos',
+          phonePath: '/sdcard/Movies',
+          pcPath: '$pcBasePath/Movies',
+          includeSubfolders: true,
+        ),
+      ];
+    } else {
+      // Per iOS, il backup completo è gestito diversamente
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Per iOS, usa il backup iCloud o iTunes per un backup completo',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _folders.addAll(presetFolders);
+      _nameController.text = 'Backup Completo ${widget.device.name}';
+    });
+
+    // ignore: use_build_context_synchronously
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Aggiunte ${presetFolders.length} cartelle per il backup completo',
+        ),
+      ),
+    );
   }
 
   void _removeFolder(int index) {
@@ -272,11 +330,13 @@ class _DeviceInfo extends StatelessWidget {
 class _FoldersSection extends StatelessWidget {
   final List<BackupFolder> folders;
   final VoidCallback onAdd;
+  final VoidCallback onAddFullBackup;
   final void Function(int) onRemove;
 
   const _FoldersSection({
     required this.folders,
     required this.onAdd,
+    required this.onAddFullBackup,
     required this.onRemove,
   });
 
@@ -292,6 +352,12 @@ class _FoldersSection extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const Spacer(),
+            OutlinedButton.icon(
+              onPressed: onAddFullBackup,
+              icon: const Icon(Icons.backup),
+              label: const Text('Backup Completo'),
+            ),
+            const SizedBox(width: 8),
             OutlinedButton.icon(
               onPressed: onAdd,
               icon: const Icon(Icons.add),
@@ -523,9 +589,8 @@ class _OptionCard extends StatelessWidget {
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: isSelected
-                            ? Theme.of(
-                                context,
-                              ).colorScheme.onPrimaryContainer.withOpacity(0.7)
+                            ? Theme.of(context).colorScheme.onPrimaryContainer
+                                  .withValues(alpha: 0.7)
                             : Colors.grey[600],
                       ),
                     ),
@@ -541,6 +606,165 @@ class _OptionCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AddFolderDialog extends StatefulWidget {
+  final String phonePath;
+  final String pcPath;
+
+  const _AddFolderDialog({required this.phonePath, required this.pcPath});
+
+  @override
+  State<_AddFolderDialog> createState() => _AddFolderDialogState();
+}
+
+class _AddFolderDialogState extends State<_AddFolderDialog> {
+  bool _includeSubfolders = true;
+  final List<String> _excludeExtensions = [];
+  final List<String> _excludeFolders = [];
+  final _extensionController = TextEditingController();
+
+  @override
+  void dispose() {
+    _extensionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Configura Cartella'),
+      content: SizedBox(
+        width: 500,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Mostra i percorsi selezionati
+              Card(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.phone_android, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              widget.phonePath,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 16),
+                      Row(
+                        children: [
+                          const Icon(Icons.computer, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              widget.pcPath,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Opzioni
+              SwitchListTile(
+                title: const Text('Includi sottocartelle'),
+                subtitle: const Text(
+                  'Backup ricorsivo di tutte le sottocartelle',
+                ),
+                value: _includeSubfolders,
+                onChanged: (value) =>
+                    setState(() => _includeSubfolders = value),
+              ),
+              const SizedBox(height: 16),
+
+              // Escludi estensioni
+              Text(
+                'Escludi estensioni',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _extensionController,
+                      decoration: const InputDecoration(
+                        hintText: 'es: .tmp, .log',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    icon: const Icon(Icons.add),
+                    onPressed: () {
+                      if (_extensionController.text.isNotEmpty) {
+                        setState(() {
+                          _excludeExtensions.add(_extensionController.text);
+                          _extensionController.clear();
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+              if (_excludeExtensions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: _excludeExtensions.map((ext) {
+                    return Chip(
+                      label: Text(ext),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onDeleted: () {
+                        setState(() => _excludeExtensions.remove(ext));
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annulla'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final folder = BackupFolder(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              phonePath: widget.phonePath,
+              pcPath: widget.pcPath,
+              includeSubfolders: _includeSubfolders,
+              excludeExtensions: _excludeExtensions,
+              excludeFolders: _excludeFolders,
+            );
+            Navigator.pop(context, folder);
+          },
+          child: const Text('Aggiungi'),
+        ),
+      ],
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:process_run/process_run.dart';
 import '../models/device.dart';
 
@@ -47,7 +48,7 @@ class IOSDeviceService {
         );
       }
     } catch (e) {
-      print('Error detecting iOS devices: $e');
+      debugPrint('Error detecting iOS devices: $e');
     }
 
     return devices;
@@ -81,7 +82,7 @@ class IOSDeviceService {
         }
       }
     } catch (e) {
-      print('Error getting iOS device info: $e');
+      debugPrint('Error getting iOS device info: $e');
     }
 
     return info;
@@ -93,11 +94,10 @@ class IOSDeviceService {
     try {
       // Usa ifuse per montare il filesystem iOS
       // Nota: questo richiede che il dispositivo sia stato autorizzato
-      final result = await _shell.run('idevice_id -l');
       // Per iOS è più complesso e richiede l'uso di AFC (Apple File Conduit)
       // Implementazione semplificata
     } catch (e) {
-      print('Error listing iOS files: $e');
+      debugPrint('Error listing iOS files: $e');
     }
 
     return files;
@@ -138,6 +138,21 @@ class IOSDeviceService {
     throw UnimplementedError(
       'Deleting files on iOS devices is restricted by Apple',
     );
+  }
+
+  Future<Map<String, dynamic>> getFileInfo(String deviceId, String path) async {
+    final info = <String, dynamic>{};
+
+    try {
+      // iOS ha restrizioni, per ora ritorna info di default
+      info['size'] = 0;
+      info['isDirectory'] = false;
+      info['modified'] = DateTime.now();
+    } catch (e) {
+      debugPrint('Error getting iOS file info: $e');
+    }
+
+    return info;
   }
 
   Stream<double> getTransferProgress() {

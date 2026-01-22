@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
+
 import '../models/device.dart';
 import 'android_device_service.dart';
 import 'ios_device_service.dart';
@@ -72,7 +74,7 @@ class DeviceManager {
         devices.addAll(iosDevices);
       }
     } catch (e) {
-      print('Error detecting devices: $e');
+      debugPrint('Error detecting devices: $e');
     }
 
     return devices;
@@ -144,6 +146,20 @@ class DeviceManager {
         break;
       default:
         throw Exception('Unsupported device type');
+    }
+  }
+
+  Future<Map<String, dynamic>> getFileInfo(
+    MobileDevice device,
+    String path,
+  ) async {
+    switch (device.type) {
+      case DeviceType.android:
+        return await _androidService.getFileInfo(device.id, path);
+      case DeviceType.ios:
+        return await _iosService.getFileInfo(device.id, path);
+      default:
+        return {};
     }
   }
 

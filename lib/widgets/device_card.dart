@@ -62,7 +62,7 @@ class DeviceCard extends StatelessWidget {
                                     ? Theme.of(context)
                                           .colorScheme
                                           .onPrimaryContainer
-                                          .withOpacity(0.7)
+                                          .withValues(alpha: 0.7)
                                     : Colors.grey[600],
                               ),
                         ),
@@ -98,9 +98,8 @@ class DeviceCard extends StatelessWidget {
                   'Ultimo backup: ${_formatDate(device.lastSync!)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: isSelected
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.onPrimaryContainer.withOpacity(0.7)
+                        ? Theme.of(context).colorScheme.onPrimaryContainer
+                              .withValues(alpha: 0.7)
                         : Colors.grey[600],
                   ),
                 ),
@@ -186,7 +185,9 @@ class _InfoChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: isSelected
-            ? Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.1)
+            ? Theme.of(
+                context,
+              ).colorScheme.onPrimaryContainer.withValues(alpha: 0.1)
             : Colors.grey[200],
         borderRadius: BorderRadius.circular(8),
       ),

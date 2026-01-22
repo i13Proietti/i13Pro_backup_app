@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:process_run/process_run.dart';
 import '../models/device.dart';
 
@@ -18,6 +19,7 @@ abstract class DeviceService {
     String destPath,
   );
   Future<void> deleteOnDevice(String deviceId, String path);
+  Future<Map<String, dynamic>> getFileInfo(String deviceId, String path);
   Stream<double> getTransferProgress();
 }
 
@@ -78,7 +80,7 @@ class AndroidDeviceService implements DeviceService {
         );
       }
     } catch (e) {
-      print('Error detecting Android devices: $e');
+      debugPrint('Error detecting Android devices: $e');
     }
 
     return devices;
@@ -135,7 +137,7 @@ class AndroidDeviceService implements DeviceService {
         info['usedStorage'] = (int.tryParse(storageParts[2]) ?? 0).toString();
       }
     } catch (e) {
-      print('Error getting device info: $e');
+      debugPrint('Error getting device info: $e');
     }
 
     return info;
@@ -163,7 +165,7 @@ class AndroidDeviceService implements DeviceService {
         }
       }
     } catch (e) {
-      print('Error listing files: $e');
+      debugPrint('Error listing files: $e');
     }
 
     return files;
@@ -202,6 +204,58 @@ class AndroidDeviceService implements DeviceService {
     } catch (e) {
       throw Exception('Failed to delete on device: $e');
     }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getFileInfo(String deviceId, String path) async {
+    final info = <String, dynamic>{};
+
+    try {
+      // Usa stat per ottenere informazioni dettagliate sul file
+      final result = await _shell.run(
+        'adb -s $deviceId shell stat -c "%s %Y %F" "$path"',
+      );
+      final output = result.first.stdout.toString().trim();
+      final parts = output.split(' ');
+
+      if (parts.length >= 3) {
+        // Dimensione in bytes
+        info['size'] = int.tryParse(parts[0]) ?? 0;
+
+        // Timestamp di modifica (Unix timestamp)
+        final timestamp = int.tryParse(parts[1]) ?? 0;
+        info['modified'] = DateTime.fromMillisecondsSinceEpoch(
+          timestamp * 1000,
+        );
+
+        // Tipo di file
+        final fileType = parts.sublist(2).join(' ');
+        info['isDirectory'] = fileType.contains('directory');
+      }
+    } catch (e) {
+      // Fallback: usa ls -ld per info base
+      try {
+        final result = await _shell.run(
+          'adb -s $deviceId shell ls -ld "$path"',
+        );
+        final output = result.first.stdout.toString().trim();
+
+        // Il primo carattere indica il tipo
+        info['isDirectory'] = output.startsWith('d');
+
+        // Prova a estrarre la dimensione
+        final parts = output.split(RegExp(r'\s+'));
+        if (parts.length >= 5) {
+          info['size'] = int.tryParse(parts[4]) ?? 0;
+        }
+      } catch (e2) {
+        debugPrint('Error getting file info: $e2');
+        info['size'] = 0;
+        info['isDirectory'] = false;
+      }
+    }
+
+    return info;
   }
 
   @override
