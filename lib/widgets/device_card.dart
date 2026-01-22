@@ -5,12 +5,14 @@ class DeviceCard extends StatelessWidget {
   final MobileDevice device;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback? onSetupWireless;
 
   const DeviceCard({
     super.key,
     required this.device,
     required this.isSelected,
     required this.onTap,
+    this.onSetupWireless,
   });
 
   @override
@@ -69,6 +71,16 @@ class DeviceCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (onSetupWireless != null &&
+                      device.type == DeviceType.android)
+                    IconButton(
+                      icon: const Icon(Icons.wifi, size: 20),
+                      tooltip: 'Setup Wireless',
+                      onPressed: onSetupWireless,
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.onPrimaryContainer
+                          : Colors.blue,
+                    ),
                   _StatusIndicator(status: device.status),
                 ],
               ),

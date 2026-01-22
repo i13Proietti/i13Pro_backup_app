@@ -3,24 +3,39 @@ import '../models/device.dart';
 import '../models/backup_config.dart';
 import '../services/device_manager.dart';
 import '../services/config_storage.dart';
+import '../services/wireless_device_service.dart';
+import '../services/proximity_backup_service.dart';
 
 class AppState extends ChangeNotifier {
   final DeviceManager deviceManager = DeviceManager();
   final ConfigStorage configStorage = ConfigStorage();
+  final WirelessDeviceService wirelessService = WirelessDeviceService();
+  late final ProximityBackupService proximityBackupService;
 
   List<MobileDevice> _devices = [];
   List<BackupConfig> _configs = [];
   MobileDevice? _selectedDevice;
   bool _isLoading = false;
   String? _errorMessage;
+  bool _proximityBackupEnabled = false;
+  List<WirelessDevice> _wirelessDevices = [];
 
   List<MobileDevice> get devices => _devices;
   List<BackupConfig> get configs => _configs;
   MobileDevice? get selectedDevice => _selectedDevice;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  bool get proximityBackupEnabled => _proximityBackupEnabled;
+  List<WirelessDevice> get wirelessDevices => _wirelessDevices;
 
   AppState() {
+    // Inizializza il servizio di proximity backup
+    proximityBackupService = ProximityBackupService(
+      wirelessService: wirelessService,
+      deviceManager: deviceManager,
+      configStorage: configStorage,
+    );
+
     _initialize();
   }
 
@@ -28,10 +43,10 @@ class AppState extends ChangeNotifier {
     // Carica le configurazioni salvate
     await loadConfigs();
 
-    // Inizia il polling dei dispositivi
+    // Inizia il polling dei dispositivi USB
     deviceManager.startDevicePolling();
 
-    // Ascolta i cambiamenti dei dispositivi
+    // Ascolta i cambiamenti dei dispositivi USB
     deviceManager.devicesStream.listen((devices) {
       _devices = devices;
 
@@ -41,6 +56,12 @@ class AppState extends ChangeNotifier {
         _selectedDevice = null;
       }
 
+      notifyListeners();
+    });
+
+    // Ascolta i dispositivi wireless rilevati
+    wirelessService.proximityStream.listen((wirelessDevices) {
+      _wirelessDevices = wirelessDevices;
       notifyListeners();
     });
   }
@@ -94,9 +115,51 @@ class AppState extends ChangeNotifier {
         .toList();
   }
 
+  /// Abilita/disabilita il proximity backup
+  void toggleProximityBackup(bool enabled) {
+    _proximityBackupEnabled = enabled;
+
+    if (enabled) {
+      proximityBackupService.startProximityBackup();
+    } else {
+      proximityBackupService.stopProximityBackup();
+    }
+
+    notifyListeners();
+  }
+
+  /// Setup iniziale del wireless ADB per un dispositivo USB
+  Future<String?> setupWirelessConnection(MobileDevice device) async {
+    try {
+      final ip = await wirelessService.setupWirelessADB(device.id);
+      if (ip != null) {
+        // Avvia la scansione per rilevare il dispositivo
+        wirelessService.startProximityScanning();
+      }
+      return ip;
+    } catch (e) {
+      _errorMessage = 'Failed to setup wireless: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Connette manualmente a un dispositivo wireless
+  Future<bool> connectToWirelessDevice(String ip, {int port = 5555}) async {
+    try {
+      return await wirelessService.connectWireless(ip, port: port);
+    } catch (e) {
+      _errorMessage = 'Failed to connect wireless: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
   @override
   void dispose() {
     deviceManager.dispose();
+    wirelessService.dispose();
+    proximityBackupService.dispose();
     super.dispose();
   }
 }

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/device.dart';
 import '../providers/app_state.dart';
 import '../widgets/device_card.dart';
 import '../widgets/backup_config_list.dart';
+import '../widgets/proximity_backup_panel.dart';
+import '../widgets/wireless_setup_dialog.dart';
 import 'backup_config_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -23,13 +26,24 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Row(
+      body: Column(
         children: [
-          // Pannello laterale dei dispositivi
-          SizedBox(width: 350, child: _DevicePanel()),
-          const VerticalDivider(width: 1),
-          // Area principale delle configurazioni
-          Expanded(child: _ConfigPanel()),
+          // Pannello Proximity Backup
+          const ProximityBackupPanel(),
+          const Divider(height: 1),
+
+          // Area principale
+          Expanded(
+            child: Row(
+              children: [
+                // Pannello laterale dei dispositivi
+                SizedBox(width: 350, child: _DevicePanel()),
+                const VerticalDivider(width: 1),
+                // Area principale delle configurazioni
+                Expanded(child: _ConfigPanel()),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -123,6 +137,9 @@ class _DevicePanel extends StatelessWidget {
                           device: device,
                           isSelected: isSelected,
                           onTap: () => appState.selectDevice(device),
+                          onSetupWireless: device.type == DeviceType.android
+                              ? () => _showWirelessSetup(context, device)
+                              : null,
                         );
                       },
                     ),
@@ -208,6 +225,25 @@ class _ConfigPanel extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+void _showWirelessSetup(BuildContext context, MobileDevice device) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) => WirelessSetupDialog(device: device),
+  );
+
+  if (result == true && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          '✅ Connessione wireless configurata! '
+          'Ora puoi scollegare il cavo USB.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
     );
   }
 }
